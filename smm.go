@@ -10,7 +10,19 @@ var eoS error
 
 const unique = true
 const parallel = false
-const simplifyCount = 0
+const simplifyCount = 2
+
+// -SOL: {d, 7}{e, 5}{m, 1}{n, 6}{o, 0}{r, 8}{s, 9}{y, 2}
+
+var startMap = map[rune]int{'d': 7,
+	'e': 5,
+	'm': 1,
+	'n': 6,
+	'o': 0,
+	'r': 8,
+	's': 9,
+	'y': 2,
+}
 
 func init() {
 	eoS = fmt.Errorf("End of string")
@@ -24,19 +36,35 @@ type letval struct {
 	let        rune
 	val        int
 	components []*letval
+	gen        int
 }
 
-func (lv *letval) computeValue() {
-	if lv.components == nil {
-		return
+func (lv *letval) computeValue(gen int) bool {
+	// if we've already been done, then just return
+	if lv.gen == gen {
+		return true
 	}
+
+	// if we are a raw value, mark us as done and return
+	if lv.components == nil {
+		lv.gen = gen
+		return true
+	}
+
 	lv.val = 0
 	for _, lvc := range lv.components {
+		// if we can't compute this answer yet, return false
+		if lvc.components != nil && lvc.gen != gen {
+			return false // we have to come back here again
+		}
 		lv.val += lvc.val
 	}
 	for lv.val > 9 {
 		lv.val %= 10
 	}
+	// now we are done
+	lv.gen = gen
+	return true
 }
 
 func (lv *letval) String() string {
@@ -98,10 +126,16 @@ func runeAccount(ru map[rune]int, w word) {
 	}
 }
 
-func valid(sol map[rune]*letval) bool {
+func valid(sol map[rune]*letval, gen int) bool {
 	// compute all simplified
-	for _, lv := range sol {
-		lv.computeValue()
+	computeAll := false
+	for !computeAll {
+		computeAll = true
+		for _, lv := range sol {
+			if !lv.computeValue(gen) {
+				computeAll = false
+			}
+		}
 	}
 
 	// check for unique
@@ -118,8 +152,9 @@ func valid(sol map[rune]*letval) bool {
 	return true
 }
 
-func generateNext(seq []*letval, sol map[rune]*letval) bool {
+func generateNext(seq []*letval, sol map[rune]*letval, gen *int) bool {
 	for {
+		*gen++
 		for i, v := range seq {
 			if v.val == 9 {
 				if i == len(seq)-1 {
@@ -128,7 +163,7 @@ func generateNext(seq []*letval, sol map[rune]*letval) bool {
 				v.val = 0
 			} else {
 				v.val++
-				if valid(sol) {
+				if valid(sol, *gen) {
 					return true
 				}
 				break
@@ -151,6 +186,9 @@ func generate(ru map[rune]int, words []word, sum word) {
 	seq := make([]*letval, 0, 12)
 	for k := range ru {
 		lv := &letval{let: k, val: 0}
+		if v, ok := startMap[k]; ok {
+			lv.val = v
+		}
 		sol[k] = lv
 	}
 
@@ -169,13 +207,17 @@ func generate(ru map[rune]int, words []word, sum word) {
 	// This is the evaluation closure
 	ef := func(s []*letval, m map[rune]*letval) {
 		if evaluate(words, sum, m) {
+			printSol(s, m, words, sum)
+		} else {
+			fmt.Printf("Failed:\n")
 			printSolV(s, m, words, sum)
 		}
 	}
 
+	gen := 1
 	// special first start condition for unique
-	if !valid(sol) {
-		if !generateNext(seq, sol) {
+	if !valid(sol, gen) {
+		if !generateNext(seq, sol, &gen) {
 			return
 		}
 	}
@@ -188,14 +230,15 @@ func generate(ru map[rune]int, words []word, sum word) {
 		} else {
 			// no need to copy since it's one at a time
 			ef(seq, sol)
+			break
 		}
-		if !generateNext(seq, sol) {
+		if !generateNext(seq, sol, &gen) {
 			break
 		}
 	}
 }
 
-func printSol(seq []*letval, sol map[rune]*letval, words []word, sum word) {
+func _printSol(sol map[rune]*letval) {
 	f := make([]string, 0, 12)
 	for k := range sol {
 		f = append(f, string(k))
@@ -207,6 +250,10 @@ func printSol(seq []*letval, sol map[rune]*letval, words []word, sum word) {
 		fmt.Printf("%s", sol[rune(s[0])])
 	}
 	fmt.Printf("\n")
+}
+
+func printSol(seq []*letval, sol map[rune]*letval, words []word, sum word) {
+	_printSol(sol)
 }
 
 func printSolV(seq []*letval, sol map[rune]*letval, words []word, sum word) {
